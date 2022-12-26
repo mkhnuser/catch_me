@@ -1,0 +1,14 @@
+version: '3.3'
+services:
+  database:
+    environment:
+          - POSTGRES_USER=testing
+          - POSTGRES_PASSWORD=testing
+          - POSTGRES_DB=testing
+    ports:
+      - '5432:5432'
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      target: testing

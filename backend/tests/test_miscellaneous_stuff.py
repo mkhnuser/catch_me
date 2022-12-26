@@ -14,5 +14,5 @@ async def client(aiohttp_client: Callable) -> TestClient:
 
 
 async def test_root(client: TestClient) -> None:
-    response = await client.get(Urls.ROOT.value)
+    response = await client.get(Urls.ROOT.value.path)
     assert response.status == http.HTTPStatus.NOT_FOUND.value

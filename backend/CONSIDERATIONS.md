@@ -1,6 +1,7 @@
 # Considerations
 
-1. Although uuid.UUID validates uuid, it allows alternative uuid representations.<br>
+1. request.json() loads all data to the RAM.<br>
+2. Although uuid.UUID validates uuid, it allows alternative uuid representations.<br>
 It can cause consistency problems.<br>
 For example:
 
