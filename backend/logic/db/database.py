@@ -11,16 +11,10 @@ class Database:
     def __init__(self, url: str) -> None:
         self.url = url
         self.engine: Optional[AsyncEngine] = None
-        self.metadata: Optional[MetaData] = None
 
     async def init_metadata(self, metadata: MetaData) -> None:
-        self.metadata = metadata
-
-        try:
-            async with self.engine.begin() as connection:
-                await connection.run_sync(self.metadata.create_all)
-        except SQLAlchemyError as e:
-            raise DatabaseError from e
+        async with self.engine.begin() as connection:
+            await connection.run_sync(metadata.create_all)
 
     def start(self) -> None:
         self.engine = create_async_engine(self.url)

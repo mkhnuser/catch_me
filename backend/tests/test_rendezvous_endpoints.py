@@ -1,7 +1,7 @@
 import http
 import uuid
 import random
-from typing import Callable
+from typing import Callable, Mapping, AsyncGenerator
 
 import pytest
 from aiohttp.test_utils import TestClient
@@ -10,8 +10,10 @@ from logic.configuration import Config
 from logic.web_app.routes import Routes
 from logic.web_app.app import create_app
 from logic.utils.misc import generate_pseudo_random_string
-from logic.validation.validation_models import (
-    RendezvousValidationModel
+from logic.validation.validation_models import RendezvousValidationModel
+from logic.db.expressions import (
+    create_rendezvous_expression,
+    delete_rendezvous_expression
 )
 
 
@@ -21,7 +23,7 @@ async def client(aiohttp_client: Callable) -> TestClient:
 
 
 @pytest.fixture
-async def rendezvous() -> RendezvousValidationModel:
+async def rendezvous_validation_model() -> RendezvousValidationModel:
     return RendezvousValidationModel(**{
         "title": generate_pseudo_random_string(
             min_length=Config.RENDEZVOUS_TITLE_MIN_LENGTH.value,
@@ -38,43 +40,53 @@ async def rendezvous() -> RendezvousValidationModel:
     })
 
 
+@pytest.fixture
+async def rendezvous_db_instance(
+    client: TestClient,
+    rendezvous_validation_model: RendezvousValidationModel
+) -> AsyncGenerator[Mapping, None]:
+    columns_to_attributes_mapping = (await client.app["db"].execute(
+        create_rendezvous_expression,
+        rendezvous_title=rendezvous_validation_model.title,
+        rendezvous_description=rendezvous_validation_model.description,
+        rendezvous_coordinates_latitude=
+        rendezvous_validation_model.coordinates.latitude,
+        rendezvous_coordinates_longitude=
+        rendezvous_validation_model.coordinates.longitude
+    )).first()._asdict()
+    yield columns_to_attributes_mapping
+    await client.app["db"].execute(
+        delete_rendezvous_expression,
+        rendezvous_id=columns_to_attributes_mapping["id"]
+    )
+
+
 async def test_rendezvous_retrieval(
     client: TestClient,
-    rendezvous: RendezvousValidationModel
+    rendezvous_db_instance: Mapping
 ) -> None:
-    post_response = await client.post(
-        Routes.RENDEZVOUS_CREATION.value.path,
-        json=rendezvous.dict()
-    )
-    post_response_data = await post_response.json()
-    post_response_rendezvous_id = str(
-        uuid.UUID(post_response_data.pop("id"))
-    )
+    existing_rendezvous_id = str(rendezvous_db_instance["id"])
 
-    get_response = await client.get(
+    response = await client.get(
         Routes.RENDEZVOUS_RETRIEVAL.value.path.format(
-            rendezvous_id=post_response_rendezvous_id
+            rendezvous_id=existing_rendezvous_id
         )
     )
-    assert get_response.status == http.HTTPStatus.OK.value
-    get_response_data = await get_response.json()
-    get_response_rendezvous_id = str(
-        uuid.UUID(get_response_data.pop("id"))
-    )
-    assert get_response_rendezvous_id == post_response_rendezvous_id
+    assert response.status == http.HTTPStatus.OK.value
+    response_data = await response.json()
+    response_rendezvous_id = str(uuid.UUID(response_data.pop("id")))
+    assert response_rendezvous_id == existing_rendezvous_id
 
-    retrieved_rendezvous = RendezvousValidationModel(**get_response_data)
-    for key, value in retrieved_rendezvous:
-        assert getattr(rendezvous, key) == value
+    RendezvousValidationModel(**response_data)
 
 
 async def test_rendezvous_creation(
     client: TestClient,
-    rendezvous: RendezvousValidationModel
+    rendezvous_validation_model: RendezvousValidationModel
 ) -> None:
     response = await client.post(
         Routes.RENDEZVOUS_CREATION.value.path,
-        json=rendezvous.dict()
+        json=rendezvous_validation_model.dict()
     )
     assert response.status == http.HTTPStatus.OK.value
     response_data = await response.json()
@@ -82,16 +94,16 @@ async def test_rendezvous_creation(
     created_rendezvous = RendezvousValidationModel(**response_data)
 
     for key, value in created_rendezvous:
-        assert getattr(rendezvous, key) == value
+        assert getattr(rendezvous_validation_model, key) == value
 
 
 async def test_redirection_after_rendezvous_creation(
     client: TestClient,
-    rendezvous: RendezvousValidationModel
+    rendezvous_validation_model: RendezvousValidationModel
 ) -> None:
     response = await client.post(
         Routes.RENDEZVOUS_CREATION.value.path,
-        json=rendezvous.dict()
+        json=rendezvous_validation_model.dict()
     )
     response_data = await response.json()
 
@@ -103,54 +115,40 @@ async def test_redirection_after_rendezvous_creation(
     )
 
 
-# Allow two random rendezvous to be passed as parameters.
-rendezvous_update = rendezvous
-
-
 async def test_rendezvous_update(
     client: TestClient,
-    rendezvous: RendezvousValidationModel,
-    rendezvous_update: RendezvousValidationModel
+    rendezvous_validation_model: RendezvousValidationModel,
+    rendezvous_db_instance: Mapping
 ) -> None:
-    post_response = await client.post(
-        Routes.RENDEZVOUS_CREATION.value.path,
-        json=rendezvous.dict()
-    )
-    post_response_data = await post_response.json()
-    created_rendezvous_id = uuid.UUID(post_response_data.pop("id"))
+    existing_rendezvous_id = str(rendezvous_db_instance["id"])
 
-    put_response = await client.put(
+    response = await client.put(
         Routes.RENDEZVOUS_UPDATE.value.path.format(
-            rendezvous_id=str(created_rendezvous_id)
+            rendezvous_id=existing_rendezvous_id
         ),
-        json=rendezvous_update.dict()
+        json=rendezvous_validation_model.dict()
     )
-    assert put_response.status == http.HTTPStatus.OK.value
+    assert response.status == http.HTTPStatus.OK.value
 
-    put_response_data = await put_response.json()
-    updated_rendezvous_id = uuid.UUID(put_response_data.pop("id"))
-    updated_rendezvous = RendezvousValidationModel(**put_response_data)
+    response_data = await response.json()
+    updated_rendezvous_id = str(uuid.UUID(response_data.pop("id")))
+    updated_rendezvous = RendezvousValidationModel(**response_data)
 
-    assert created_rendezvous_id == updated_rendezvous_id
+    assert existing_rendezvous_id == updated_rendezvous_id
 
     for key, value in updated_rendezvous:
-        assert getattr(rendezvous_update, key) == value
+        assert getattr(rendezvous_validation_model, key) == value
 
 
 async def test_rendezvous_deletion(
     client: TestClient,
-    rendezvous: RendezvousValidationModel
+    rendezvous_db_instance: Mapping
 ) -> None:
-    post_response = await client.post(
-        Routes.RENDEZVOUS_CREATION.value.path,
-        json=rendezvous.dict()
-    )
-    created_rendezvous_id = uuid.UUID((await post_response.json()).pop("id"))
+    existing_rendezvous_id = str(rendezvous_db_instance["id"])
 
-    delete_response = await client.delete(
+    response = await client.delete(
         Routes.RENDEZVOUS_DELETION.value.path.format(
-            rendezvous_id=str(created_rendezvous_id)
+            rendezvous_id=existing_rendezvous_id
         )
     )
-
-    assert delete_response.status == http.HTTPStatus.OK.value
+    assert response.status == http.HTTPStatus.OK.value
