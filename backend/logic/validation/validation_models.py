@@ -2,7 +2,7 @@ from typing import Optional
 
 from pydantic import BaseModel, constr, confloat, Extra
 
-from configuration import Config
+from ..configuration import Config
 
 
 class CoordinatesValidationModel(BaseModel):

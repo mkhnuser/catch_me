@@ -11,14 +11,14 @@ ENV LATITUDE_MIN_VALUE=-90
 ENV LATITUDE_MAX_VALUE=90
 ENV LONGITUDE_MIN_VALUE=-180
 ENV LONGITUDE_MAX_VALUE=180
-ENV DB_CONNECTION_POOL_CLOSURE_TIMEOUT=1
+ENV DB_CLOSE_TIMEOUT=1
 
 FROM base AS testing
-ENV DATABASE_URL=postgresql://testing:testing@database:5432/testing
+ENV DATABASE_URL=postgresql+asyncpg://testing:testing@database:5432/testing
 CMD ["python", "-m", "pytest", "--durations=5", "--durations-min=0.1"]
 
 FROM base AS production
-ENV DATABASE_URL=postgresql://production:production@database:5432/production
+ENV DATABASE_URL=postgresql+asyncpg://production:production@database:5432/production
 CMD [ \
     "gunicorn", "main:create_app", \
      "--access-logfile", "-", \
